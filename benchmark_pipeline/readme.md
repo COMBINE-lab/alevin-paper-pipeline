@@ -15,6 +15,8 @@ can be added to the github.
 
 How to run
 ------
+*Note*: We are very actively developing the pipeline, if you face any issue while replicating the pipeline please raise an issue in this repo.
+
 ```
 # CGAT-core requires these python libraries to be installed before installing it
 # https://github.com/CGATOxford/CGATCore/blob/eceb5200efa2b81a00c60cd417887e565a90edd8/requires.txt
