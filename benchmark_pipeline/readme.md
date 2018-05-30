@@ -20,8 +20,8 @@ How to run
 # https://github.com/CGATOxford/CGATCore/blob/eceb5200efa2b81a00c60cd417887e565a90edd8/requires.txt
 
 git clone git@github.com:CGATOxford/CGATCore.git
-cd CGATCore; python setup.py install; cd ..
+cd CGATCore; python setup.py develop; cd ..
 
 git clone git@github.com:COMBINE-lab/alevin-paper-pipeline.git
-python ../alevin-paper/benchmark_pipeline/pipeline_10xbenchmark.py -c1 -e -p2 -v5 show run_alevin_options --local
+python alevin-paper/benchmark_pipeline/pipeline_10xbenchmark.py -c1 -e -p2 -v5 make full --local
 ```
