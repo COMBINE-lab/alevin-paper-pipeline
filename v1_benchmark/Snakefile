@@ -1,0 +1,127 @@
+import sys
+import json
+
+#-------------------------------------------------
+#Change the relevant paths
+#-------------------------------------------------
+
+transcriptome = "/mnt/scratch5/avi/alevin/data/human/txptome/rsem.txp.fa"
+human_t2gFile = "/mnt/scratch5/avi/alevin/data/human/gtf/txp2gene.tsv"
+
+#-------------------------------------------------
+#DON'T change anything below this
+#-------------------------------------------------
+
+base = os.getcwd()
+
+num_threads = 16
+
+dataset = "pbmc3k_fastqs"
+reads_path = base+"/data/"+dataset+"/"
+
+salmon_bin = base+"/bin/salmon/bin/salmon"
+salmon_v1_wrapper = base+"/bin/salmon/scripts/v1_10x/run.sh"
+salmon_idx = base+"/bin/salmon/salIdx/"
+salmon_out = base+"/salOut/"
+
+kallisto_version = "kallisto_linux-v0.44.0"
+kallisto_bin = base+"/bin/"+kallisto_version+"/kallisto"
+
+sc_kallisto_path = base+"/scRNA-Seq-TCC-prep/source/"
+sc_kallisto_config = base+"/scRNA-Seq-TCC-prep/example_dataset/"
+sc_kallisto_temp = sc_kallisto_config+"temp/"
+sc_kallisto_out = sc_kallisto_config+"kalOut/"
+sc_kallisto_tcc = base+"/kalOut/"
+kallisto_idx = sc_kallisto_config+"kal.idx"
+
+kal_config = {
+     "NUM_THREADS": num_threads,
+     "WINDOW": [500, 5000],
+     "SOURCE_DIR": sc_kallisto_path,
+     "BASE_DIR": reads_path,
+     "sample_idx": ["ACGCGGAA","CGCTATCC","GTTGCATG","TAAATCGT"],
+     "SAVE_DIR": sc_kallisto_temp,
+     "dmin": 5,
+     "BARCODE_LENGTH": 14,
+     "OUTPUT_DIR": sc_kallisto_out,
+     "kallisto":{
+         "binary": kallisto_bin,
+         "index": kallisto_idx,
+         "TCC_output" : sc_kallisto_tcc
+     }
+}
+with open("{}config.json".format(sc_kallisto_config), 'w') as f:
+    json.dump(kal_config, f)
+
+#--------------------------------------------------
+#Rules for running test
+#--------------------------------------------------
+
+rule get_data:
+    output:
+        data = base+'/data',
+        bin = base+'/bin'
+    shell:
+        """
+        mkdir -p {output.bin}
+        cd bin; git clone git@github.com:COMBINE-lab/salmon.git
+        wget https://github.com/pachterlab/kallisto/releases/download/v0.44.0/kallisto_linux-v0.44.0.tar.gz
+        tar -xvzf kallisto_linux-v0.44.0.tar.gz
+
+        cd salmon; git checkout develop; mkdir build; cd build;
+        cmake .. -DBOOST_ROOT=/home/linuxbrew/.linuxbrew/; make -j 15 install; cd ../bin
+        g++ -std=c++11 -O3 -I {output.bin}/salmon/include -o wrapper {output.bin}/salmon/scripts/v1_10x/wrapper.cpp -lz
+
+        mkdir -p {output.data}
+        cd ../../../data; wget http://cf.10xgenomics.com/samples/cell-exp/1.1.0/pbmc3k/pbmc3k_fastqs.tar
+        tar -xvf pbmc3k_fastqs.tar
+
+        cd ..; git clone https://github.com/pachterlab/scRNA-Seq-TCC-prep.git;
+        """
+
+rule index_kallisto:
+    input:
+        kallisto_bin,
+        transcriptome
+    output:
+        kallisto_idx
+    shell:
+        """
+        {kallisto_bin} index -i {kallisto_idx} {transcriptome}
+        """
+
+rule run_kallisto:
+    input:
+        kallisto_bin,
+        kallisto_idx,
+        sc_kallisto_config
+    output:
+        sc_kallisto_out,
+        sc_kallisto_tcc
+    shell:
+        """
+        cd {sc_kallisto_config}
+        /usr/bin/time -o {base}/kalTime.txt python2 ../source/10xDetect_and_Prep.py config.json
+        """
+
+rule index_salmon:
+    input:
+        salmon_bin,
+        transcriptome
+    output:
+        salmon_idx
+    shell:
+        """
+        {salmon_bin} index --gencode -k 31 -p 20 -t {transcriptome} -i {salmon_idx}
+        """
+
+rule run_salmon:
+    input:
+        salmon_bin,
+        salmon_idx
+    output:
+        salmon_out
+    shell:
+       """
+       /usr/bin/time -o salTime.txt {salmon_v1_wrapper} {salmon_bin} alevin -lISR --gemcode -i {salmon_idx} -o {salmon_out} -p {num_threads} --tgMap {human_t2gFile} --dedup --dumpbarcodeeq -b {reads_path}
+       """

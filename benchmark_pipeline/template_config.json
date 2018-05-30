@@ -1,0 +1,17 @@
+{
+    "NUM_THREADS": %(threads)s,
+    "WINDOW": [500, 5000],
+    "SOURCE_DIR": "%(kallisto_source)s",
+    "BASE_DIR": "%(base_dir)s",
+    "sample_idx": %(barcodes)s,
+    "SAVE_DIR": "%(save_dir)s",
+    "dmin": 5,
+    "BARCODE_LENGTH": 14,
+    "OUTPUT_DIR": "%(output_dir)s",
+    "kallisto":{
+        "binary": "%(kallisto_binary)s",
+        "index": "%(kallisto_index)s",
+        "TCC_output" : "%(TCC_output)s"
+    }
+}
+

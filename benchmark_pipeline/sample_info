@@ -1,0 +1,7 @@
+sample_name,cell_ranger_version,n_cells,species,seq_sat,chemistry
+neurons_900,2.1.0,931,mm,57.3,v2
+neuron_9k,2.1.0,9128,mm,65.2,v2
+neurons_2000,2.1.0,2022,mm,72.5,v2
+fixed_neurons_6days_2000,2.1.0,1920,mm,83.7,v2
+t_4k,2.1.0,4538,hg,89.5,v2
+t_3k,2.1.0,3555,hg,91.9,v2
