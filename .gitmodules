@@ -1,3 +1,3 @@
-[submodule "scRNA-Seq-TCC-prep"]
-	path = scRNA-Seq-TCC-prep
+[submodule "benchmark_pipeline/scRNA-Seq-TCC-prep"]
+	path = benchmark_pipeline/scRNA-Seq-TCC-prep
 	url = git@github.com:pachterlab/scRNA-Seq-TCC-prep.git
