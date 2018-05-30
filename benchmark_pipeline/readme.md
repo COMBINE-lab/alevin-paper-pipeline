@@ -14,7 +14,7 @@ can be added to the github.
 
 How to run
 ------
-*****Note**: We are very actively developing the pipeline, if you face any problem while replicating the pipeline please raise an issue in this repo.
+**Note**: We are very actively developing the pipeline, if you face any problem while replicating the pipeline please raise an issue in this repo.
 
 ```
 # CGAT-core requires these python libraries to be installed before installing it
@@ -27,7 +27,7 @@ git clone git@github.com:COMBINE-lab/alevin-paper-pipeline.git
 python alevin-paper/benchmark_pipeline/pipeline_10xbenchmark.py -c1 -e -p2 -v5 make full --local
 ```
 
-### settings working on macosx
+### Working Settings on macosx
 ```
 conda create -n cgat -c anaconda python=3
 source activate cgat
