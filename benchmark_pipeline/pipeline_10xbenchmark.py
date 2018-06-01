@@ -32,7 +32,7 @@
 Overviews
 ========
 
-This pipeline accompanies the first Alevin preprint. It compares Alevin performance on 10X datasets with CellRanger, UMI-Tools and Kallisto.
+This pipeline accompanies the first Alevin preprint. It compares Alevin performance on 10X datasets with CellRanger, UMI-Tools.
 
 Usage
 =====
