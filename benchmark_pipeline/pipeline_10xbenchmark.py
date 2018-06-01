@@ -64,7 +64,6 @@ Requirements:
 * CGATPipelines
 * CGAT
 * CellRanger == 2.1.1
-* Kallisto == 0.23.0
 * UMI-Tools == 0.5.3
 * STAR == 2.4.2a
 * featureCounts == 1.4.6
@@ -156,7 +155,7 @@ TENX_DATASETSV1 = [x for x in TENX_DATASETS if TENX2INFO[x]['chem']=="v1"]
 @mkdir('raw', 'raw/10X_fastqs/')
 @originate(['raw/10X_fastqs/%s.fastq.1.gz' % x for x in TENX_DATASETSV2])
 def download10x(outfile):
-    ''' Download the 10X data, untar. Kallisto and CellRanger do not want
+    ''' Download the 10X data, untar, and CellRanger do not want
     catted files, so do leave these present..'''
 
     sample_name = P.snip(os.path.basename(outfile), ".fastq.1.gz")
@@ -193,7 +192,7 @@ def download10x(outfile):
 @mkdir('raw', 'raw/10X_fastqs/')
 @originate(['raw/10X_fastqs/%s.fastq.1.gz' % x for x in TENX_DATASETSV1])
 def download10xV1(outfile):
-    ''' Download the 10X data, untar. Kallisto and CellRanger do not want
+    ''' Download the 10X data, untar. and CellRanger do not want
     catted files, so leave these present..'''
 
     sample_name = P.snip(os.path.basename(outfile), ".fastq.1.gz")
