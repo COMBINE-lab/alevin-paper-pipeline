@@ -254,6 +254,28 @@ def download10xWhitelists(outfile):
     P.run()
 
 
+@mkdir('raw', 'raw/breast_epithelial/')
+@originate('raw/breast_epithelial/ind7_possorted_genome_bam.bam/new2_comb_uci_normal_basal_luminal_315_MissingLibrary_1_HL72NBBXX/bamtofastq_S1_L001_R1_001.fastq.gz')
+def downloadBreastEpithelial(outfile):
+    ''' Download the Breast Epithelial data from Nguyen et al (2018).
+    Profiling human breast epithelial cells using single cell RNA sequencing
+    identifies cell diversity" (individual 4)'''
+
+    tmpdir = P.getTempDir(shared=True)
+    bam_outfile = outfile.split("/")[-3]
+    outdir = os.path.dirname(os.path.dirname(outfile))
+
+    url = "https://sra-download.ncbi.nlm.nih.gov/traces/sra62/SRZ/007010/SRR7010522/%s" % bam_outfile
+
+    statement = '''
+    wget %(url)s -O %(tmpdir)s/%(bam_outfile)s > wget_log 2>&1;
+    wget http://cf.10xgenomics.com/misc/bamtofastq; chmod 700 bamtofastq;
+    ./bamtofastq %(tmpdir)s/%(bam_outfile)s %(outdir)s >
+    raw/bamtofastq_%(bam_outfile)s.log 2>&1;
+    rm -rf %(tmpdir)s bamtofastq
+    '''
+    
+    P.run()
 
 
 @follows(mkdir("nreads.dir"))
@@ -474,8 +496,6 @@ def MakeBasicTranscriptome(infiles, outfile):
                 attributes = {x.split(" ")[0]:x.split(" ")[1] for x in attributes}
                 if "transcript_id" in attributes:
                     transcripts.add(attributes["transcript_id"].replace('"', ''))
-
-    print(len(transcripts))
     
     transcripts_seen=set()
     with open(outfile, "w") as outf:
@@ -745,7 +765,8 @@ def ExtractAndCorrectReads(infiles, outfile):
          MakeStarIndex,
          get_txp_to_gene,
          get_mito_genes,
-         get_rrna_genes)
+         get_rrna_genes,
+         downloadBreastEpithelial)
 def PrepareInputs():
     pass
 
@@ -1296,6 +1317,142 @@ def run_cellranger_basic(infiles, timing_file):
 
     P.run()
 
+
+################################################################################
+################################################################################
+# Breast epithelial re-analysis
+################################################################################
+################################################################################
+
+@jobs_limit(2, "cellranger")
+@follows(download10xWhitelists)
+@mkdir("cellranger")
+@transform(downloadBreastEpithelial,
+           regex("raw/breast_epithelial/(\S+)_possorted_genome_bam.bam/\S+/bamtofastq_S1_L001_R1_001.fastq.gz"),
+         add_inputs(make_cellranger_transcriptome_dir),
+           r"cellranger/\1/quant.time")
+def run_cellranger_epithelial(infiles, timing_file):
+
+    infile, transcriptome_sentinels = infiles
+    infile, run_type_file = infiles
+
+    # ugly hacky way to identify the correct index!
+    species = "hg"
+    transcriptome_sentinel = [
+        x for x in transcriptome_sentinels if
+        os.path.basename(os.path.dirname(x))[0:2] == species][0]
+    transcriptome_dir = os.path.dirname(transcriptome_sentinel)
+
+    tmpdir = os.path.basename(P.getTempDir("."))
+    outdir = os.path.dirname(timing_file)
+
+    # empty the directory if it exists
+    if os.path.isdir(outdir):
+        shutil.rmtree(outdir)
+
+    os.mkdir(outdir)
+
+    fastq_dirs = ",".join(glob.glob(os.path.dirname(os.path.dirname(infile)) + "/*"))
+
+    job_options = PARAMS["timed_job_options"]
+    job_threads = int(PARAMS['timed_job_threads'])
+    job_memory = str(int(PARAMS["cellranger_memory"]) / job_threads) + "G"
+
+    localmem = int(PARAMS["cellranger_memory"])
+
+    statement = '''
+    /usr/bin/time -v cellranger count
+    --id %(tmpdir)s
+    --fastqs %(fastq_dirs)s
+    --localcores %(job_threads)s
+    --localmem=%(localmem)s
+    --transcriptome=%(transcriptome_dir)s
+    --nosecondary
+    --expect-cells 10000
+    > %(timing_file)s.log 2> %(timing_file)s ; checkpoint ;
+    mv -f %(tmpdir)s/* %(outdir)s
+    '''
+
+    P.run()
+
+
+@mkdir("alevin")
+@jobs_limit(3, "alevin")
+@transform(downloadBreastEpithelial,
+           regex("raw/breast_epithelial/(\S+)_possorted_genome_bam.bam/\S+/bamtofastq_S1_L001_R1_001.fastq.gz"),
+           add_inputs(buildSalmonIndex,
+                      get_txp_to_gene,
+                      get_mito_genes, get_rrna_genes),
+           r"alevin/breast_epithelial_\1-dumpcsv/quant.time")
+def run_alevin_epithelial(infiles, timing_file):
+    ''' run alevin with breast epithelial data (+/- naive)'''
+
+    infile, ix1, ix2, ix3, tx2gene, mito_genes, rrna_genes = infiles
+    bc_files = glob.glob(os.path.dirname(os.path.dirname(infile)) +
+                         "/*/bamtofastq*R1*.fastq.gz")
+
+    reads_files = [re.sub("_R1_", "_R2_", x) for x in bc_files]
+    
+    bc_files = " ".join(bc_files)
+    reads_files = " ".join(reads_files)
+
+    outdir = os.path.dirname(timing_file)
+
+    # very hacky way to identify the correct index!
+    # note that buildSalmonIndex gets expanded into three index file names above
+    species = "hg"
+    index = [x for x in (ix1, ix2, ix3) if os.path.basename(x).split("_")[0] == species][0]
+
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+
+    job_options = PARAMS["timed_job_options"]
+    job_threads = int(PARAMS['timed_job_threads'])
+
+    # at least 40Gb total, at least 1Gb per thread
+    job_memory = str(max(40/job_threads, 1)) + "G"
+
+    statement = '''
+    /usr/bin/time -v %(alevin_bin)s alevin
+    --chromium
+    -lISR
+    -1 %(bc_files)s
+    -2 %(reads_files)s
+    --out %(outdir)s
+    --index %(index)s
+    -p %(job_threads)s
+    --tgMap %(tx2gene)s
+    --mrna %(mito_genes)s
+    --rrna %(rrna_genes)s
+    --dumpcsvcounts
+    2> %(timing_file)s'''
+    P.run()
+
+    P.touch(timing_file)
+
+    timing_file2 = timing_file.replace("dumpcsv", "naive")
+    outdir = os.path.dirname(timing_file2)
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+
+    statement = '''
+    /usr/bin/time -v %(alevin_bin)s alevin
+    --chromium
+    -lISR
+    -1 %(bc_files)s
+    -2 %(reads_files)s
+    --out %(outdir)s
+    --index %(index)s
+    -p %(job_threads)s
+    --tgMap %(tx2gene)s
+    --mrna %(mito_genes)s
+    --rrna %(rrna_genes)s
+    --dumpcsvcounts --naive
+    2> %(timing_file2)s'''
+    P.run()
+
+    P.touch(timing_file2)
+
 ################################################################################
 # Run UMI-Tools
 ################################################################################
@@ -1394,6 +1551,36 @@ def umi_tools_extract_subset(infiles, timing_file):
 
     P.run()
 
+@jobs_limit(2, "umi")
+@follows(mkdir("umi_tools"))
+@transform(downloadBreastEpithelial,
+           regex("raw/breast_epithelial/(\S+)_possorted_genome_bam.bam/\S+/bamtofastq_S1_L001_R1_001.fastq.gz"),
+           r"umi_tools/\1.extracted.time")
+def umi_tools_epithelial(infile, timing_file):
+    '''Run UMI-Tools extraction using 10X whitelist'''
+
+    out1 = re.sub(".time", ".fastq.1", timing_file)
+    out2 = re.sub(".time", ".fastq.2", timing_file)
+    logfile = re.sub(".time", ".log", timing_file)
+
+    job_options = PARAMS["timed_job_options"]
+
+    bc_files = glob.glob(os.path.dirname(os.path.dirname(infile)) +
+                         "/*/bamtofastq*R1*.fastq.gz")
+    zcat_bc_files = "<(zcat %s)" % " ".join(bc_files)
+    zcat_read_files = re.sub("_R1_", "_R2_", zcat_bc_files)
+
+    statement = '''
+    /usr/bin/time -v umi_tools extract
+    -I %(zcat_bc_files)s
+    --read2-in %(zcat_read_files)s
+    --read2-stdout
+    -S %(out2)s
+    --bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN
+    -L %(logfile)s
+    2> %(timing_file)s '''
+
+    P.run()
 
 ################################################################################
 @jobs_limit(2, "umi")
@@ -1817,8 +2004,11 @@ def getMultiStageProfile(infiles, outfile):
     ''' extract run info for multi-stage methods = naive and kallisto'''
     extractFromTime(infiles, outfile, multistage=True)
 
+@follows(run_alevin_epithelial, run_cellranger_epithelial)
+def epithelial():
+    pass
 
-@follows(getProfile, getMultiStageProfile)
+@follows(getProfile, getMultiStageProfile, epithelial)
 def full():
     pass
 

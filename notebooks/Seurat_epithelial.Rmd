@@ -1,0 +1,181 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+library(Seurat)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+
+my_theme <- theme_bw() + theme(text=element_text(size=20), aspect.ratio=1, panel.grid=element_blank())
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+
+```{r}
+# path to the given output directory when ran Alevin
+base.path <- "/ifs/projects/toms/alevin/run_benchmark"
+```
+
+ReadAlevin from https://combine-lab.github.io/alevin-tutorial/2018/alevin-seurat/
+```{r}
+
+# Parts of the function is taken from Seurat's Read10x parsing function
+ReadAlevin <- function( base.path = NULL ){
+    if (! dir.exists(base.path )){
+      stop("Directory provided does not exist")
+    }
+
+    barcode.loc <- paste0( base.path, "alevin/quants_mat_rows.txt" )
+    gene.loc <- paste0( base.path, "alevin/quants_mat_cols.txt" )
+    matrix.loc <- paste0( base.path, "alevin/quants_mat.csv" )
+    if (!file.exists( barcode.loc )){
+      stop("Barcode file missing")
+    }
+    if (! file.exists(gene.loc) ){
+      stop("Gene name file missing")
+    }
+    if (! file.exists(matrix.loc )){
+      stop("Expression matrix file missing")
+    }
+    matrix <- as.matrix(read.csv(matrix.loc, header=FALSE))
+    print(dim(data.frame(matrix)))
+    matrix <- t(matrix[,-1])
+    print(dim(data.frame(matrix)))
+
+    cell.names <- readLines( barcode.loc )
+    gene.names <- readLines( gene.loc )
+
+    colnames(matrix) <- cell.names
+    rownames(matrix) <- gene.names
+    matrix[is.na(matrix)] <- 0
+    return(matrix)
+}
+```
+
+
+```{r}
+
+alv.data <- ReadAlevin(base.path)
+```
+
+Now we make the Seurat object. Note we are not placing any restictions on the # genes per cell so that the non-whitelisted cells are still retained at this stage
+```{r, eval=False}
+
+ind7 <- CreateSeuratObject(raw.data=alv.data, min.cells=3, min.genes=1, project="epithelial_ind7")
+print(ind7)
+saveRDS(ind7, file.path(base.path, "ind7.rds"))
+
+```
+
+If we've already made the object we can read in from an R binary since this is much faster
+```{r}
+
+ind7 <- readRDS(file.path(base.path, "ind7.rds"))
+
+whitelist <- scan(file.path(base.path, "alevin/whitelist.txt"), character(), quote = "")
+
+mito.genes <- scan(file.path(base.path, "references/mito_genes.tsv"), character(), quote = "")
+
+rrna.genes <- scan(file.path(base.path, "references/rrna_genes.tsv"), character(), quote = "")
+
+```
+
+First, some very basic QC
+```{r}
+all_genes <- rownames(ind7@data)
+percent.mito <- Matrix::colSums(ind7@raw.data[intersect(all_genes, mito.genes), ]) / Matrix::colSums(ind7@raw.data)
+percent.rrna <- Matrix::colSums(ind7@raw.data[intersect(all_genes, rrna.genes), ]) / Matrix::colSums(ind7@raw.data)
+ind7 <- AddMetaData(object = ind7, metadata = percent.mito, col.name = "percent.mito")
+ind7 <- AddMetaData(object = ind7, metadata = percent.rrna, col.name = "percent.rrna")
+VlnPlot(object = ind7, features.plot = c("nGene", "nUMI", "percent.mito", "percent.rrna"),
+        nCol = 3, point.size.use=0.1)
+
+```
+
+Let's redo this outselves so we can separate +/- whitelisted cells
+```{r}
+s <- structure(1:10, names=letters[1:10])
+ind7 <- AddMetaData(
+  ind7, structure(rownames(ind7@meta.data) %in% whitelist, names=rownames(ind7@meta.data)), "whitelist")
+head(ind7@meta.data)
+
+print(table(ind7@meta.data$whitelist))
+
+p <- ind7@meta.data %>%
+  gather(key="metric", value="value", -c(whitelist, orig.ident)) %>%
+  ggplot(aes(whitelist, log10(value))) + geom_quasirandom(size=0.25) + my_theme +
+  facet_wrap(~metric, scales="free")
+
+print(p)
+```
+```{r}
+ind7 <- NormalizeData(object = ind7, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+```{r}
+ind7 <- FindVariableGenes(ind7, mean.function=ExpMean, dispersion.function=LogVMR,
+                          x.low.cutoff=0.0125, x.high.cutoff=4, y.cutoff=1)
+```
+
+```{r}
+print(length(ind7@var.genes))
+```
+
+```{r}
+ind7 <- ScaleData(ind7, vars.to.regress = c("nUMI", "percent.mito", "percent.rrna"))
+```
+
+```{r}
+ind7 <- RunPCA(object = ind7, pc.genes = ind7@var.genes, do.print = FALSE,pcs.compute=30)
+```
+
+```{r}
+PCAPlot(ind7, dim.1 = 1, dim.2 = 2)
+
+p <- ind7@dr$pca@cell.embeddings %>% data.frame() %>%
+  mutate(whitelist=rownames(ind7@dr$pca@cell.embeddings) %in% whitelist) %>%
+  arrange(-whitelist) %>%
+  ggplot(aes(PC1, PC2, col=whitelist)) +
+    geom_point(size=1) +
+    scale_colour_manual(values=cbPalette[2:3]) +
+    my_theme
+
+print(p)
+
+print(p + aes(PC3, PC4))
+
+
+```
+```{r, eval=FALSE}
+ind7 <- JackStraw(object = ind7, num.replicate = 100, display.progress = TRUE)
+saveRDS(ind7, file.path(base.path, "ind7_js.rds"))
+```
+
+```{r}
+ind7 <- readRDS(file.path(base.path, "ind7_js.rds"))
+ind7 <- JackStrawPlot(object = ind7, PCs = 1:30)
+PCElbowPlot(ind7, num.pc=30)
+```
+
+```{r}
+n_use_dims <- 20
+
+ind7 <- FindClusters(ind7, reduction.type = "pca", dims.use = 1:n_use_dims, 
+                     resolution = 0.6, print.output = 0, save.SNN = TRUE)
+
+PrintFindClustersParams(ind7)
+```
+
+```{r}
+ind7 <- RunTSNE(ind7, dims.use = 1:n_use_dims, do.fast = TRUE)
+
+TSNEPlot(ind7)
+```
+
+
