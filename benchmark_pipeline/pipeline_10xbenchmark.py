@@ -1425,6 +1425,7 @@ def run_alevin_epithelial(infiles, timing_file):
     --mrna %(mito_genes)s
     --rrna %(rrna_genes)s
     --dumpcsvcounts
+    --dumpfeatures
     2> %(timing_file)s'''
     P.run()
 
