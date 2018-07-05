@@ -18,7 +18,7 @@ cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
 
 ```{r}
 # path to the given output directory when ran Alevin
-base.path <- "/ifs/projects/toms/alevin/run_benchmark"
+base.path <- "/ifs/projects/toms/alevin/run_benchmark/alevin/breast_epithelial_ind7-dumpcsv/"
 ```
 
 ReadAlevin from https://combine-lab.github.io/alevin-tutorial/2018/alevin-seurat/
@@ -62,7 +62,7 @@ ReadAlevin <- function( base.path = NULL ){
 Read the alevin quant and make the Seurat object. Note we are not placing any restictions on the # genes per cell so that the non-whitelisted cells are still retained at this stage. 
 
 This cell below needs updating to remove the LQ CBs since we aren't not interested in them at all. The interesting comparison to make is between whitelisted +/- in the ambiguous CBs, using the HQ CBs as a sort of "gold-standard". NOte, all I'm doing at the moment is comparing whitelisted +/- for all cells which isn't particularly interesting since it ignores the pre-classification HQ/LQ/ambiguous grouping.
-```{r, eval=False}
+```{r, eval=FALSE}
 alv.data <- ReadAlevin(base.path)
 ind7 <- CreateSeuratObject(raw.data=alv.data, min.cells=3, min.genes=1, project="epithelial_ind7")
 print(ind7)
@@ -77,9 +77,9 @@ ind7 <- readRDS(file.path(base.path, "ind7.rds"))
 
 whitelist <- scan(file.path(base.path, "alevin/whitelist.txt"), character(), quote = "")
 
-mito.genes <- scan(file.path(base.path, "references/mito_genes.tsv"), character(), quote = "")
+mito.genes <- scan(file.path(base.path, "../../references/mito_genes.tsv"), character(), quote = "")
 
-rrna.genes <- scan(file.path(base.path, "references/rrna_genes.tsv"), character(), quote = "")
+rrna.genes <- scan(file.path(base.path, "../../references/rrna_genes.tsv"), character(), quote = "")
 
 ```
 
@@ -162,8 +162,9 @@ saveRDS(ind7, file.path(base.path, "ind7_js.rds"))
 
 ```{r}
 ind7 <- readRDS(file.path(base.path, "ind7_js.rds"))
-ind7 <- JackStrawPlot(object = ind7, PCs = 1:30)
+ind7p <- JackStrawPlot(object = ind7, PCs = 1:12)
 PCElbowPlot(ind7, num.pc=30)
+print(ind7p)
 ```
 
 ```{r}
@@ -176,7 +177,7 @@ PrintFindClustersParams(ind7)
 ```
 
 Run tSNE
-```{r, eval=False}
+```{r, eval=FALSE}
 ind7 <- RunTSNE(ind7, dims.use = 1:n_use_dims, do.fast = TRUE)
 saveRDS(ind7, file.path(base.path, "ind7_tSNE.rds"))
 
@@ -187,4 +188,151 @@ Plot tSNE - NEED TO WORK OUT WHERE THE HQ and ambiguous CBs fall out here - Hope
 ind7 <- readRDS(file.path(base.path, "ind7_tSNE.rds"))
 TSNEPlot(ind7)
 ```
+
+Label plot by whitelist presecnce:
+```{r}
+library(ggplot2)
+tsne_data = data.frame(ind7@dr$tsne@cell.embeddings)
+tsne_data$cell=row.names(ind7@dr$tsne@cell.embeddings)
+tsne_data$wl = tsne_data$cell %in% whitelist
+ggplot(tsne_data) + aes(x=tSNE_1, y=tSNE_2, col=wl) + geom_point(size=1) + scale_color_manual(values=c( "black", "grey80"))
+
+```
+
+It looks like the non whitelist barcodes sit neatly between three large clusters of cells. This is of course both things filtered because of the traditional knee thrshold and also tings filtered using the machine learning (ML). There is also a scattering of cells removed that are in the central cluster areas, but they don't look like many. 
+```{r}
+TSNEPlot(ind7, cells.use=setdiff(tnse_data$cell, whitelist))
+TSNEPlot(ind7, cells.use= whitelist)
+```
+
+If we remove the non-whitelist cells, we see that the data now sperate cleanly into three groups. But is this just a case of removing the low frequenct barcodes, what about the ones removed by the machine learning. 
+
+```{r}
+bcfrequency <- read.delim(file.path(base.path, "alevin/frequency.txt"), stringsAsFactors = FALSE, col.names = c("barcode", "frequency"), header=FALSE)
+LQ <- bcfrequency$barcode[(length(bcfrequency$barcode) -999):length(bcfrequency$barcode)]
+HQ <- bcfrequency$barcode[1:ceiling((length(bcfrequency$barcode)-1000)/2 - 1)]
+AM <- bcfrequency$barcode[ceiling((length(bcfrequency$barcode)-1000)/2):(length(bcfrequency$barcode)-1000)]
+tsne_data$AM <- tsne_data$cell %in% AM
+tsne_data$LQ <- tsne_data$cell %in% LQ
+tsne_data$HQ <- tsne_data$cell %in% HQ
+
+statuses =c("Low frequency",
+            "Rejected Ambiguous",
+            "Accepted Ambiguous",
+            "Accepted Frequency")
+
+status_lookup <- data.frame(wl=c(FALSE,FALSE,TRUE,TRUE),
+                            HQ=c(F,F,F,T), 
+                            AM=c(F,T,T,F),
+                            Status=ordered(statuses, levels = statuses))
+left_join(tsne_data, status_lookup, by = c("wl", "HQ", "AM")) %>% na.omit() -> tsne_data
+
+ggplot(tsne_data) + aes(x=tSNE_1, y=tSNE_2, col=Status) + geom_point(size=1) + scale_color_manual(values=cbPalette)
+```
+
+```{r, fig.width = 8, fig.height=8, units="in"}
+ggplot(tsne_data) + aes(x=tSNE_1, y=tSNE_2, col=Status) + geom_point(data=tnse_data, aes(x=tSNE_1, y= tSNE_2, group=1),  size=0.3, color="grey80") + 
+  geom_point(size=0.3) + facet_wrap(~Status) + scale_color_manual(values=cbPalette, guide=FALSE) + theme(aspect.ratio=1)
+```
+
+Looks like the low frequency (LQ) barcodes sit in a seperate cluster. Some of the rejected ambigous also sit in this cluster, while the others sit between two of the clusters. 
+
+Another way to look at this is to incramentally remove filtered barcodes:
+```{r, fig.width=10, fig.height=3.3, units="in"}
+library(patchwork)
+cbPalette[9] = "black"
+all <- TSNEPlot(ind7, pt.size=0.3, do.return=T, colors.use=cbPalette) + theme(aspect.ratio=1, legend.position="none") + ggtitle("1. All barcodes")
+freq <- TSNEPlot(ind7, pt.size=0.3, do.return=T, cells.use= c(HQ,AM), colors.use=cbPalette) + theme(aspect.ratio=1, legend.position="none") + ggtitle("2. Low frequency filtered")
+final <- TSNEPlot(ind7,  pt.size=0.3, do.return=T, cells.use=whitelist, colors.use=cbPalette) + theme(aspect.ratio=1)  + ggtitle("3. Low quality filtered")
+all + freq + final
+```
+The low quality bcs mostly sit in clusters 5 and 6 and these are mostly removed on filtering LQ. The remaining cells are rmeoved from 5 and 6 by removing the rejected AM BCs. This also removes most of cluster 5, and some of cluster 3, along with bits around the edige of cluster 1. Why is part of cluster 4 different from the rest? 
+
+One worrying possibility is that the ML is just thresholding on UMI counts really and that the threshold it choose was intermediate and if you increased it a little, you'd shave off the rest of cluster 4. Lets look athow the barcoe frequencies match the clustering
+```{r}
+tsne_data %>% left_join(bcfrequency, by = c("cell" = "barcode")) %>%
+  ggplot() + 
+  aes(x=tSNE_1, y=tSNE_2, col=log(frequency)) + 
+  geom_point(size=1)
+                          
+
+```
+
+SO it does look a little bit like cluster 4 and the rmoved parts of cluster 3 do have lower counts. Could we have done the divsion into accepted and rejected AM barcodes just as easily with counts?
+```{r}
+tsne_data %>% left_join(bcfrequency, by = c("cell" = "barcode")) %>%
+  ggplot() + 
+  aes(frequency) + 
+  geom_histogram() +
+  facet_grid(Status~.) +
+  scale_x_log10()
+```
+
+No, there is significant overlap between the accepted and regjected AM barcodes, although the rejected do tend to have lower counts than the accepted.  But hang on, these are non-intelegently deduped barcode counts. What if the ML is just doing what the simple knee is doing, but with properly deduped counts?
+
+```{r}
+cell_umi_freq <- colSums(ind7@raw.data)
+cell_umi_freq = data.frame(cell = names(cell_umi_freq), freq = cell_umi_freq)
+tsne_data %>% left_join(cell_umi_freq, by = c("cell" = "cell")) %>%
+  ggplot() + 
+  aes(freq) + 
+  geom_histogram() +
+  facet_grid(Status~.) +
+  scale_x_log10()
+```
+
+
+No, if anything, the overlap is greater here. 
+
+What is the overlap with the cell ranger barcodes?
+
+```{r}
+cr_whitelist <- scan(file.path(base.path, "../../cellranger/ind7/outs/filtered_gene_bc_matrices/hg38/barcodes.tsv"), character(), quote = "")
+cr_whitelist <- sapply(cr_whitelist, function(x) strsplit(x, "-", fixed=TRUE)[[1]][1])
+```
+
+```{r, fig.width=4, fig.height=4, units="in"}
+library(VennDiagram)
+library(grid)
+v <- venn.diagram(list("alevin"=whitelist, "cellranger"=cr_whitelist), filename=NULL)
+grid.newpage()
+grid.draw(v)
+```
+
+There are a small number of barcodes that are accepted by alevin, but not cell ranger. Where are these barcodes?
+This is what the CellRanger Whitelisted barcodes look like. 
+```{r}
+ TSNEPlot(ind7, pt.size=0.3, do.return=T, cells.use= cr_whitelist, colors.use=cbPalette) + theme(aspect.ratio=1)
+```
+
+```{r}
+TSNEPlot(ind7, pt.size=0.3, do.return=T, cells.use=setdiff(whitelist, cr_whitelist), colors.use=cbPalette) + theme(aspect.ratio=1)
+```
+
+Note that CellRanger clears up the remaining cells in clusters 5 and 6, it also takes a large bite out of cluster 4. But it also removes a fair smattering of cells from every cluster. 
+
+To find out about cluster 4, we can use Seurat to find marker genes:
+
+```{r}
+clust4_markers = FindMarkers(ind7, 4, c(0,1,2,3,7), logfc.threshold = 1)
+print(head(clust4_markers))
+```
+
+This is very weird....the vase majority of these are are non-coding or pseduo-genes. 
+
+What happens if we remove the non-whitelisted
+
+```{r}
+ind7_wl = SubsetData(ind7, cells.use=whitelist)
+clust4_wl_markers <-  FindMarkers(ind7_wl, 4, c(0,1,2,3,7), logfc.threshold = 1)
+print(head(clust4_wl_markers))
+```
+
+```{r}
+ind7_cr = SubsetData(ind7, cells.use=cr_whitelist)
+clust4_cr_markers <-  FindMarkers(ind7_cr, 4, c(0,1,2,3,7), logfc.threshold = 1)
+print(head(clust4_cr_markers))
+```
+
+
 
