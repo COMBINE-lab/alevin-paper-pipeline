@@ -752,7 +752,7 @@ def ExtractAndCorrectReads(infiles, outfile):
     -o %(outfile)s_log.dir
     -i %(index)s
     --whitelist %(whitelist)s
-    -p 10 --dumpfq --nosoftmap --noquant
+    -p 10 --dumpfq --noSoftMap --noQuant
     --tgMap %(txp2gene)s >
     %(outfile)s'''
 
@@ -844,11 +844,11 @@ def run_alevin_options(infiles, timing_file, options, job_threads, sample_name):
     run_type2type_options = {
         "wo_whitelist": "",
         "w_whitelist": "--whitelist %s" % whitelist,
-        "naive": "--naive --dumpcsvcounts",
-        "usecor": "--usecorrelation",
-        "dumpeq": "--dumpbarcodeeq",
-        "dumpcsv":"--dumpcsvcounts",
-        "dumpfeatures":"--dumpfeatures"}
+        "naive": "--naive --dumpCsvCounts",
+        "usecor": "--useCorrelation",
+        "dumpeq": "--dumpBarcodeEq",
+        "dumpcsv":"--dumpCsvCounts",
+        "dumpfeatures":"--dumpFeatures"}
 
     type_options = run_type2type_options[options]
 
@@ -947,8 +947,8 @@ def run_alevin_subsets(infiles, timing_file):
     --mrna %(mito_genes)s
     --rrna %(rrna_genes)s
     --whitelist %(whitelist)s
-    --dumpbarcodeeq
-    --dumpcsvcounts
+    --dumpBarcodeEq
+    --dumpCsvCounts
     2> %(timing_file)s_dump_quants'''
     P.run()
 
@@ -970,8 +970,8 @@ def run_alevin_subsets(infiles, timing_file):
     --tgMap %(tx2gene)s
     --mrna %(mito_genes)s
     --rrna %(rrna_genes)s
-    --dumpbarcodeeq
-    --dumpcsvcounts
+    --dumpBarcodeEq
+    --dumpCsvCounts
     --noem
     2> %(timing_file)s_noem'''
     #P.run()
@@ -1017,7 +1017,7 @@ def run_alevin_basic(infiles, timing_file):
     --tgMap %(tx2gene)s
     --mrna %(mito_genes)s
     --rrna %(rrna_genes)s
-    --dumpcsvcounts
+    --dumpCsvCounts
     2> %(timing_file)s'''
     P.run()
 
@@ -1424,8 +1424,9 @@ def run_alevin_epithelial(infiles, timing_file):
     --tgMap %(tx2gene)s
     --mrna %(mito_genes)s
     --rrna %(rrna_genes)s
-    --dumpcsvcounts
-    --dumpfeatures
+    --dumpCsvCounts
+    --useCorrelation
+    --dumpFeatures
     2> %(timing_file)s'''
     P.run()
 
@@ -1448,7 +1449,9 @@ def run_alevin_epithelial(infiles, timing_file):
     --tgMap %(tx2gene)s
     --mrna %(mito_genes)s
     --rrna %(rrna_genes)s
-    --dumpcsvcounts --naive
+    --dumpCsvCounts
+    --useCorrelation
+    --naive
     2> %(timing_file2)s'''
     P.run()
 
